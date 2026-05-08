@@ -6,6 +6,7 @@ import { searchPapers, submitSummary, ApiError } from "@/lib/api";
 import type { Paper } from "@/lib/types";
 import { useToast } from "@/app/components/Toaster";
 import { SearchHistory } from "@/app/components/SearchHistory";
+import { UploadPaperCard } from "@/app/components/UploadPaperCard";
 import { addSearch } from "@/lib/searchHistory";
 
 function SearchInner() {
@@ -18,6 +19,7 @@ function SearchInner() {
   const [results, setResults] = useState<Paper[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const [uploaded, setUploaded] = useState<{ paper: Paper; viewUrl: string } | null>(null);
 
   useEffect(() => {
     if (initialQuery) {
@@ -84,6 +86,22 @@ function SearchInner() {
         </button>
       </form>
 
+      <UploadPaperCard onUploaded={(paper, viewUrl) => setUploaded({ paper, viewUrl })} />
+
+      {uploaded ? (
+        <div className="mt-6">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Uploaded paper</p>
+          <ul className="mt-3">
+            <PaperResultCard
+              paper={uploaded.paper}
+              submitting={submitting === uploaded.paper.id}
+              onSummarize={() => handleSummarize(uploaded.paper)}
+              pdfHref={uploaded.viewUrl}
+            />
+          </ul>
+        </div>
+      ) : null}
+
       {/* Results */}
       <div className="mt-8">
         {loading ? (
@@ -128,11 +146,18 @@ function PaperResultCard({
   paper,
   submitting,
   onSummarize,
+  pdfHref,
 }: {
   paper: Paper;
   submitting: boolean;
   onSummarize: () => void;
+  pdfHref?: string;
 }) {
+  // Prefer an explicit override (e.g. pre-signed GET for an uploaded paper).
+  // Fall back to paper.pdfUrl, but only if it's a real URL — `internal:` keys
+  // are pipeline-only references, not browser-resolvable.
+  const href =
+    pdfHref ?? (paper.pdfUrl && !paper.pdfUrl.startsWith("internal:") ? paper.pdfUrl : undefined);
   return (
     <li className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-start justify-between gap-4">
@@ -154,9 +179,9 @@ function PaperResultCard({
           >
             {submitting ? "Submitting…" : "Summarize"}
           </button>
-          {paper.pdfUrl ? (
+          {href ? (
             <a
-              href={paper.pdfUrl}
+              href={href}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"

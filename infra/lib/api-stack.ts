@@ -224,8 +224,28 @@ export class ApiStack extends cdk.Stack {
       ],
     }));
 
+    // Pre-signed PUT URL for direct browser → S3 upload of user PDFs.
+    // Uploaded objects land at uploads/{userId}/{paperId}.pdf and are picked
+    // up by the pipeline via the `internal:` pdfUrl scheme (see fetch-pdf.ts).
+    const getUploadUrlFn = new nodejs.NodejsFunction(this, "GetUploadUrlFn", {
+      ...handlerProps,
+      entry: path.join(apiRoot, "handlers", "get-upload-url.ts"),
+      timeout: cdk.Duration.seconds(5),
+      memorySize: 256,
+      environment: {
+        ...handlerProps.environment,
+        PDF_BUCKET: props.pdfBucket.bucketName,
+      },
+    });
+    props.pdfBucket.grantPut(getUploadUrlFn, "uploads/*");
+    props.pdfBucket.grantRead(getUploadUrlFn, "uploads/*");
+
     const summarize = api.root.addResource("summarize");
     summarize.addMethod("POST", new apigw.LambdaIntegration(submitJobFn), authProps);
+
+    api.root
+      .addResource("upload-url")
+      .addMethod("POST", new apigw.LambdaIntegration(getUploadUrlFn), authProps);
 
     const summaries = api.root.addResource("summaries");
     summaries.addMethod("GET", new apigw.LambdaIntegration(listSummariesFn), authProps);
@@ -239,7 +259,7 @@ export class ApiStack extends cdk.Stack {
     api.root.addResource("chat").addMethod("POST", new apigw.LambdaIntegration(chatFn), authProps);
 
     this.apiEndpoint = api.url;
-    this.handlerFns.push(healthFn, searchFn, submitJobFn, getSummaryFn, listSummariesFn, getQuotaFn, getRelatedFn, getGraphFn, chatFn);
+    this.handlerFns.push(healthFn, searchFn, submitJobFn, getSummaryFn, listSummariesFn, getQuotaFn, getRelatedFn, getGraphFn, chatFn, getUploadUrlFn);
     // Active X-Ray tracing + IAM permission so the Lambda runtime can
     // actually write trace segments.
     this.handlerFns.forEach((fn) => {
