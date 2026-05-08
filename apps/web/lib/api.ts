@@ -199,6 +199,72 @@ export async function askPaper(jobId: string, question: string): Promise<ChatRes
   });
 }
 
+// ─── Upload (user-supplied PDF) ─────────────────────────────────────
+
+export type UploadResult = {
+  paper: Paper;
+  viewUrl: string;
+};
+
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+type UploadUrlResponse = {
+  paperId: string;
+  s3Key: string;
+  uploadUrl: string;
+  viewUrl: string;
+  internalUrl: string;
+  contentType: string;
+  maxBytes: number;
+};
+
+export async function uploadPaper(file: File, title: string): Promise<UploadResult> {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new ApiError(413, "too_large", `PDF must be ≤ ${MAX_UPLOAD_BYTES} bytes`);
+  }
+  if (file.type && file.type !== "application/pdf") {
+    throw new ApiError(400, "invalid_type", "file must be a PDF");
+  }
+
+  const cleanTitle = title.trim() || file.name.replace(/\.pdf$/i, "");
+
+  if (USE_REAL) {
+    const presign = await apiFetch<UploadUrlResponse>("upload-url", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, contentLength: file.size }),
+    });
+
+    const putRes = await fetch(presign.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "application/pdf" },
+      body: file,
+    });
+    if (!putRes.ok) {
+      throw new ApiError(putRes.status, "upload_failed", `S3 PUT returned ${putRes.status}`);
+    }
+
+    const paper: Paper = {
+      id: presign.paperId,
+      title: cleanTitle,
+      authors: [],
+      abstract: "",
+      year: new Date().getFullYear(),
+      pdfUrl: presign.internalUrl,
+    };
+    return { paper, viewUrl: presign.viewUrl };
+  }
+
+  const paper: Paper = {
+    id: `upload-mock-${Date.now()}`,
+    title: cleanTitle,
+    authors: [],
+    abstract: "",
+    year: new Date().getFullYear(),
+    pdfUrl: "internal:mock",
+  };
+  return delay({ paper, viewUrl: URL.createObjectURL(file) });
+}
+
 // ─── Expose mode for debugging ──────────────────────────────────────
 
 export const apiMode: "real" | "mock" = USE_REAL ? "real" : "mock";

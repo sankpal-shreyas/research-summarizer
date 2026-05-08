@@ -38,6 +38,18 @@ export class DataStack extends cdk.Stack {
     this.pdfBucket = new s3.Bucket(this, "PdfBucket", {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      // CORS lets the browser PUT directly to pre-signed URLs and GET them
+      // for the post-upload preview. Auth is handled by the signed URL itself
+      // (short-lived, signed); CORS just controls what the browser permits.
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET, s3.HttpMethods.HEAD],
+          allowedOrigins: ["*"],
+          allowedHeaders: ["*"],
+          exposedHeaders: ["ETag"],
+          maxAge: 3000,
+        },
+      ],
       lifecycleRules: [
         {
           id: "expire-raw-pdfs",
